@@ -19,7 +19,7 @@ use crossterm::{
 };
 use lru::LruCache;
 use structopt::{clap::arg_enum, StructOpt};
-use unicode_segmentation::UnicodeSegmentation;
+use unicode_segmentation::{Graphemes, UnicodeSegmentation};
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "rum", about = "Stylish interactive scripts")]
@@ -105,6 +105,17 @@ enum Subcommand {
         #[structopt(name = "COMMAND", required = true)]
         command: Vec<String>,
     },
+    /// Typing effect
+    #[structopt()]
+    Typer {
+        #[structopt(short("i"), long, default_value = "100")]
+        speed: usize,
+        #[structopt(short("w"), long, default_value = "1000")]
+        wait: usize,
+        #[structopt(short("t"), long)]
+        text: String,
+    },
+    /// Choose from a few different options
     #[structopt()]
     Choose {
         /// Number of allowed selections
@@ -165,7 +176,14 @@ struct ChooseState {
     cursor_loc: usize,
 }
 
-enum Component {
+#[derive(Debug)]
+struct TyperState<'a> {
+    iter: Graphemes<'a>,
+    done_printing: bool,
+    last_updated: Instant,
+}
+
+enum Component<'a> {
     Text {
         width: usize,
         placeholder: String,
@@ -183,6 +201,12 @@ enum Component {
         text: String,
         state: SpinnerState,
     },
+    Typer {
+        speed: Duration,
+        wait: Duration,
+        text: String,
+        state: TyperState<'a>,
+    },
     Choose {
         text: String,
         selected_string: String,
@@ -192,7 +216,7 @@ enum Component {
     },
 }
 
-impl Component {
+impl<'a> Component<'a> {
     pub fn from_opts(opts: &Opts) -> Component {
         match &opts.subcommand {
             Subcommand::Text {
@@ -269,6 +293,16 @@ impl Component {
                     speed: Duration::from_millis(*speed as u64),
                 }
             }
+            Subcommand::Typer { speed, text, wait } => Component::Typer {
+                speed: Duration::from_millis(*speed as u64),
+                wait: Duration::from_millis(*wait as u64),
+                text: text.clone(),
+                state: TyperState {
+                    iter: text.graphemes(true),
+                    last_updated: Instant::now(),
+                    done_printing: false,
+                },
+            },
             Subcommand::Choose {
                 selections,
                 text,
@@ -328,6 +362,7 @@ impl Component {
                     Ok(("".to_owned(), 1))
                 }
             }
+            Component::Typer { .. } => Ok((String::new(), 0)),
             Component::Choose {
                 state: ChooseState {
                     choices, chosen, ..
@@ -359,6 +394,26 @@ impl Component {
                 } else {
                     false
                 }
+            }
+            Component::Typer {
+                state, speed, wait, ..
+            } => {
+                if state.done_printing {
+                    if state.last_updated.elapsed() > *wait {
+                        return Ok(true);
+                    }
+                } else {
+                    if state.last_updated.elapsed() > *speed {
+                        let c = state.iter.next();
+                        if let Some(c) = c {
+                            execute!(screen, Print(c)).drop_error()?;
+                            state.last_updated = Instant::now();
+                        } else {
+                            state.done_printing = true;
+                        }
+                    }
+                }
+                false
             }
             _ => false,
         };
@@ -423,6 +478,7 @@ impl Component {
                 _ => false,
             },
             Component::Spinner { .. } => false,
+            Component::Typer { .. } => false,
             Component::Choose { inexact, state, .. } => match event {
                 Event::Key(KeyEvent {
                     code: KeyCode::Down,
@@ -483,7 +539,7 @@ impl Component {
     pub fn draw(&mut self, screen: &mut Stderr) -> Result<(), ()> {
         // TODO: Use styling
         let padding = 2;
-        execute!(screen, Clear(ClearType::All)).drop_error()?;
+        execute!(screen, Clear(ClearType::All), MoveTo(padding, padding)).drop_error()?;
 
         match self {
             Component::Text {
@@ -578,6 +634,7 @@ impl Component {
 
                 Ok(())
             }
+            Component::Typer { .. } => Ok(()),
             Component::Choose {
                 text,
                 state,
