@@ -44,6 +44,12 @@ arg_enum! {
         VBar,
         Arrow,
         Circle,
+        Pulse,
+        Line,
+        Moon,
+        Monkey,
+        Meter,
+        Points,
     }
 }
 
@@ -125,7 +131,7 @@ struct ConfirmState {
 #[derive(Debug)]
 struct SpinnerState {
     child: Child,
-    chars: Vec<char>,
+    chars: Vec<String>,
     progress: usize,
     last_updated: Instant,
 }
@@ -181,14 +187,32 @@ impl Component {
                 command,
                 spinner_style,
             } => {
-                let chars: Vec<char> = match spinner_style {
-                    SpinnerStyle::Braille => vec!['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'],
+                let chars: Vec<String> = match spinner_style {
+                    SpinnerStyle::Braille => vec!["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"],
                     SpinnerStyle::VBar => vec![
-                        '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█', '▇', '▆', '▅', '▄', '▃', '▂', '▁',
+                        "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█", "▇", "▆", "▅", "▄", "▃", "▂", "▁",
                     ],
-                    SpinnerStyle::Arrow => vec!['←', '↖', '↑', '↗', '→', '↘', '↓', '↙'],
-                    SpinnerStyle::Circle => vec!['◜', '◠', '◝', '◞', '◡', '◟'],
-                };
+                    SpinnerStyle::Arrow => vec!["←", "↖", "↑", "↗", "→", "↘", "↓", "↙"],
+                    SpinnerStyle::Circle => vec!["◜", "◠", "◝", "◞", "◡", "◟"],
+                    SpinnerStyle::Pulse => vec!["█", "▓", "▒", "░"],
+                    SpinnerStyle::Line => vec!["|", "/", "-", "\\"],
+                    SpinnerStyle::Moon => vec![
+                        "\u{1f311}",
+                        "\u{1f312}",
+                        "\u{1f313}",
+                        "\u{1f314}",
+                        "\u{1f315}",
+                        "\u{1f316}",
+                        "\u{1f317}",
+                        "\u{1f318}",
+                    ],
+                    SpinnerStyle::Monkey => vec!["\u{1f648}", "\u{1f649}", "\u{1f64a}"],
+                    SpinnerStyle::Meter => vec!["▱▱▱", "▰▱▱", "▰▰▱", "▰▰▰", "▰▰▱", "▰▱▱", "▱▱▱"],
+                    SpinnerStyle::Points => vec!["∙∙∙", "●∙∙", "∙●∙", "∙∙●"],
+                }
+                .iter()
+                .map(|e| e.to_string())
+                .collect();
 
                 let child = Command::new(&command[0])
                     .args(&command[1..])
@@ -198,7 +222,7 @@ impl Component {
                 Component::Spinner {
                     text: text.clone(),
                     state: SpinnerState {
-                        chars,
+                        chars: chars.to_owned(),
                         last_updated: Instant::now(),
                         progress: 0,
                         child,
@@ -412,12 +436,12 @@ impl Component {
                 },
                 ..
             } => {
-                let c = chars[*progress];
+                let c = &chars[*progress];
 
                 execute!(
                     screen,
                     MoveTo(padding, padding),
-                    Print(format!("{c} {text}")),
+                    Print(format!("{c}  {text}")),
                 )
                 .drop_error()?;
 
