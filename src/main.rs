@@ -1,5 +1,6 @@
 use std::{
-    io::{stderr, Stderr},
+    io::{stderr, stdin, Stderr},
+    num::NonZeroUsize,
     process::{Child, Command, Stdio},
     time::{Duration, Instant},
 };
@@ -8,12 +9,15 @@ use crossterm::{
     cursor::{Hide, MoveTo, Show},
     event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
-    style::{Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor},
+    style::{
+        Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
+    },
     terminal::{
         disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
         LeaveAlternateScreen,
     },
 };
+use lru::LruCache;
 use structopt::{clap::arg_enum, StructOpt};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -50,6 +54,7 @@ arg_enum! {
         Monkey,
         Meter,
         Points,
+        Progress,
     }
 }
 
@@ -58,32 +63,33 @@ enum Subcommand {
     /// Single line text input
     #[structopt()]
     Text {
-        /// Placeholder text.
+        /// Placeholder text
         #[structopt(short("p"), long, default_value = "Enter text here")]
         placeholder: String,
 
-        /// Prefix.
+        /// Prefix
         #[structopt(short("x"), long, default_value = "> ")]
         prefix: String,
     },
     /// Binary confirmation input
     #[structopt()]
     Confirm {
-        /// Title text.
+        /// Title text
         #[structopt(short("t"), long, default_value = "Confirm?")]
         text: String,
 
-        /// No option text.
+        /// No option text
         #[structopt(short("n"), long, default_value = "No")]
         no: String,
 
-        /// Yes option text.
+        /// Yes option text
         #[structopt(short("y"), long, default_value = "Yes")]
         yes: String,
     },
+    /// Spinner progress indicator
     #[structopt()]
     Spinner {
-        /// Text.
+        /// Text
         #[structopt(short("t"), long, default_value = "Waiting ...")]
         text: String,
 
@@ -91,12 +97,27 @@ enum Subcommand {
         #[structopt(short("i"), long, default_value = "100")]
         speed: usize,
 
-        /// Spinner style.
+        /// Spinner style
         #[structopt(short("s"), long, possible_values = &SpinnerStyle::variants(), case_insensitive = true, default_value = "braille")]
         spinner_style: SpinnerStyle,
 
+        /// The subcommand to spawn a child process
         #[structopt(name = "COMMAND", required = true)]
         command: Vec<String>,
+    },
+    #[structopt()]
+    Choose {
+        /// Number of allowed selections
+        #[structopt(short("s"), long, default_value = "1")]
+        selections: NonZeroUsize,
+
+        /// Allow for fewer than requested selections
+        #[structopt(short("i"), long)]
+        inexact: bool,
+
+        /// Text
+        #[structopt(short("t"), long, default_value = "Choose from these options:")]
+        text: String,
     },
 }
 
@@ -136,6 +157,14 @@ struct SpinnerState {
     last_updated: Instant,
 }
 
+#[derive(Debug)]
+struct ChooseState {
+    choices: Vec<String>,
+    chosen: LruCache<usize, ()>,
+    selections: NonZeroUsize,
+    cursor_loc: usize,
+}
+
 enum Component {
     Text {
         width: usize,
@@ -153,6 +182,13 @@ enum Component {
         speed: Duration,
         text: String,
         state: SpinnerState,
+    },
+    Choose {
+        text: String,
+        selected_string: String,
+        unselected_string: String,
+        inexact: bool,
+        state: ChooseState,
     },
 }
 
@@ -209,6 +245,9 @@ impl Component {
                     SpinnerStyle::Monkey => vec!["\u{1f648}", "\u{1f649}", "\u{1f64a}"],
                     SpinnerStyle::Meter => vec!["▱▱▱", "▰▱▱", "▰▰▱", "▰▰▰", "▰▰▱", "▰▱▱", "▱▱▱"],
                     SpinnerStyle::Points => vec!["∙∙∙", "●∙∙", "∙●∙", "∙∙●"],
+                    SpinnerStyle::Progress => vec![
+                        "[     ]", "[>    ]", "[=>   ]", "[==>  ]", "[===> ]", "[====>]", "[=====]",
+                    ],
                 }
                 .iter()
                 .map(|e| e.to_string())
@@ -228,6 +267,38 @@ impl Component {
                         child,
                     },
                     speed: Duration::from_millis(*speed as u64),
+                }
+            }
+            Subcommand::Choose {
+                selections,
+                text,
+                inexact,
+            } => {
+                // Grab all options from stdin
+                let mut choices: Vec<String> = vec![];
+                for line in stdin().lines() {
+                    choices.push(line.unwrap());
+                }
+                if choices.is_empty() {
+                    panic!("Got 0 choices!");
+                }
+
+                let (selected_string, unselected_string) = if selections.get() == 1 {
+                    ("(x) ".to_owned(), "( ) ".to_owned())
+                } else {
+                    ("[x] ".to_owned(), "[ ] ".to_owned())
+                };
+                Component::Choose {
+                    text: text.clone(),
+                    state: ChooseState {
+                        choices,
+                        chosen: LruCache::new(*selections),
+                        cursor_loc: 0,
+                        selections: *selections,
+                    },
+                    inexact: *inexact,
+                    selected_string,
+                    unselected_string,
                 }
             }
         }
@@ -256,6 +327,19 @@ impl Component {
                     child.kill().ok(); // swallow error
                     Ok(("".to_owned(), 1))
                 }
+            }
+            Component::Choose {
+                state: ChooseState {
+                    choices, chosen, ..
+                },
+                ..
+            } => {
+                let s = chosen
+                    .iter()
+                    .filter_map(|(k, _)| choices.get(*k).map(ToOwned::to_owned))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                Ok((s, 0))
             }
         }
     }
@@ -339,6 +423,53 @@ impl Component {
                 _ => false,
             },
             Component::Spinner { .. } => false,
+            Component::Choose { inexact, state, .. } => match event {
+                Event::Key(KeyEvent {
+                    code: KeyCode::Down,
+                    ..
+                }) => {
+                    if state.cursor_loc != state.choices.len() - 1 {
+                        state.cursor_loc += 1;
+                        true
+                    } else {
+                        false
+                    }
+                }
+                Event::Key(KeyEvent {
+                    code: KeyCode::Up, ..
+                }) => {
+                    if state.cursor_loc != 0 {
+                        state.cursor_loc -= 1;
+                        true
+                    } else {
+                        false
+                    }
+                }
+                Event::Key(KeyEvent {
+                    code: KeyCode::Char(' '),
+                    ..
+                }) => {
+                    let curstate = state.chosen.get(&state.cursor_loc).is_some();
+                    if curstate {
+                        // Remove from selection
+                        state.chosen.pop(&state.cursor_loc);
+                    } else {
+                        // Add to selection
+                        state.chosen.push(state.cursor_loc, ());
+                    }
+                    true
+                }
+                Event::Key(KeyEvent {
+                    code: KeyCode::Enter,
+                    ..
+                }) => {
+                    if *inexact || state.chosen.len() == state.selections.get() {
+                        return Ok(true);
+                    }
+                    false
+                }
+                _ => false,
+            },
         };
 
         // for now, always redraw
@@ -444,6 +575,55 @@ impl Component {
                     Print(format!("{c}  {text}")),
                 )
                 .drop_error()?;
+
+                Ok(())
+            }
+            Component::Choose {
+                text,
+                state,
+                selected_string,
+                unselected_string,
+                inexact,
+            } => {
+                let mut line = padding;
+                execute!(
+                    screen,
+                    MoveTo(padding, line),
+                    Print(text),
+                    MoveTo(padding, line + 1),
+                    SetAttribute(Attribute::Dim),
+                    SetAttribute(Attribute::Italic),
+                    Print(format!(
+                        "Select {} {}",
+                        if *inexact { "at most" } else { "exactly" },
+                        state.selections.get()
+                    )),
+                    SetAttribute(Attribute::Reset)
+                )
+                .drop_error()?;
+
+                line += 3;
+                for (choice_i, choice) in state.choices.iter().enumerate() {
+                    if choice_i == state.cursor_loc {
+                        execute!(screen, SetForegroundColor(get_bg_color(true))).drop_error()?;
+                    }
+
+                    let selection: &str = if state.chosen.contains(&choice_i) {
+                        &selected_string
+                    } else {
+                        &unselected_string
+                    };
+
+                    execute!(
+                        screen,
+                        MoveTo(padding, line),
+                        Print(format!("{selection} {choice}")),
+                        ResetColor
+                    )
+                    .drop_error()?;
+
+                    line += 1;
+                }
 
                 Ok(())
             }
