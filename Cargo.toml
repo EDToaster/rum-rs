@@ -6,7 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-crossterm = "0.26.1"
-lru = "0.10.0"
-structopt = "0.3.26"
+clap = { version = "4.5.32", features = ["derive"] }
+crossterm = "0.28.1"
+enum_dispatch = "0.3.13"
+lru = "0.13.0"
 unicode-segmentation = "1.10.1"
