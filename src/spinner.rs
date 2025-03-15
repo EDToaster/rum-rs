@@ -49,7 +49,7 @@ impl ComponentTrait for Spinner {
         Ok(false)
     }
 
-    fn update(
+    fn handle_event(
         &mut self,
         _event: &crossterm::event::Event,
         _screen: &mut std::io::Stderr,

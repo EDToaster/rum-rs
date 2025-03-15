@@ -21,11 +21,7 @@ impl ComponentTrait for Text {
         Ok(self.input)
     }
 
-    fn tick(&mut self, _screen: &mut std::io::Stderr) -> Result<bool, ()> {
-        Ok(false)
-    }
-
-    fn update(
+    fn handle_event(
         &mut self,
         event: &crossterm::event::Event,
         _screen: &mut std::io::Stderr,

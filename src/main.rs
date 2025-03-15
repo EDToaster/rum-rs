@@ -166,10 +166,12 @@ trait ComponentTrait {
     fn result(self) -> Result<String, u8>;
 
     /// Tick the component. Return Ok(true) if the component is complete.
-    fn tick(&mut self, screen: &mut Stderr) -> Result<bool, ()>;
+    fn tick(&mut self, _screen: &mut Stderr) -> Result<bool, ()> {
+        Ok(false)
+    }
 
     /// Process a terminal event. Return Ok(true) if the component is complete.
-    fn update(&mut self, event: &Event, screen: &mut Stderr) -> Result<bool, ()>;
+    fn handle_event(&mut self, event: &Event, screen: &mut Stderr) -> Result<bool, ()>;
 
     /// Draw the component
     fn draw(&mut self, screen: &mut Stderr) -> Result<(), ()>;
@@ -189,8 +191,8 @@ impl Component {
             }),
             Cmd::Confirm { text, no, yes } => Component::Confirm(Confirm {
                 text: text.clone(),
-                padded_no: format!("{: ^10}", no),
-                padded_yes: format!("{: ^10}", yes),
+                padded_no: format!(" {: ^10} ", no),
+                padded_yes: format!(" {: ^10} ", yes),
                 confirmed: false,
             }),
             Cmd::Spinner {
@@ -325,7 +327,7 @@ fn main() -> Result<ExitCode, ()> {
             interrupted = true;
             break;
         }
-        if component.update(&event, &mut screen)? {
+        if component.handle_event(&event, &mut screen)? {
             break;
         }
         // redraw

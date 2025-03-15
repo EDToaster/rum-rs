@@ -20,15 +20,11 @@ impl ComponentTrait for Confirm {
         if self.confirmed {
             Ok(String::new())
         } else {
-            Err(0)
+            Err(1)
         }
     }
 
-    fn tick(&mut self, _screen: &mut std::io::Stderr) -> Result<bool, ()> {
-        Ok(false)
-    }
-
-    fn update(
+    fn handle_event(
         &mut self,
         event: &crossterm::event::Event,
         _screen: &mut std::io::Stderr,
