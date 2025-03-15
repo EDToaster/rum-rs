@@ -5,7 +5,7 @@ use std::{
 
 use crossterm::{cursor::MoveTo, execute, style::Print};
 
-use crate::{ComponentTrait, DropError};
+use crate::{component::ComponentTrait, DropError};
 
 #[derive(Debug)]
 pub(crate) struct Spinner {

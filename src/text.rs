@@ -6,7 +6,7 @@ use crossterm::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::{ComponentTrait, DropError as _};
+use crate::{component::ComponentTrait, DropError as _};
 
 #[derive(Debug)]
 pub(crate) struct Text {

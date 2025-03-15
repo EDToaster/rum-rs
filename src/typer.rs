@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use crossterm::{execute, style::Print};
 
-use crate::{ComponentTrait, DropError};
+use crate::{component::ComponentTrait, DropError};
 
 #[derive(Debug)]
 pub(crate) struct Typer {

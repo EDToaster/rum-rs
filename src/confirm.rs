@@ -5,7 +5,7 @@ use crossterm::{
     style::{Print, ResetColor, SetBackgroundColor},
 };
 
-use crate::{get_bg_color, ComponentTrait, DropError as _};
+use crate::{component::ComponentTrait, get_bg_color, DropError as _};
 
 #[derive(Debug)]
 pub(crate) struct Confirm {

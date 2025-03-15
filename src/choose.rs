@@ -8,7 +8,7 @@ use crossterm::{
 };
 use lru::LruCache;
 
-use crate::{get_bg_color, ComponentTrait, DropError};
+use crate::{component::ComponentTrait, get_bg_color, DropError};
 
 #[derive(Debug)]
 pub(crate) struct Choose {
