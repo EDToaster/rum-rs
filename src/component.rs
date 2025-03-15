@@ -6,14 +6,15 @@ use std::{
 
 use crossterm::event::Event;
 use lru::LruCache;
+use unicode_segmentation::UnicodeSegmentation as _;
 
 use crate::{
-    choose::Choose, confirm::Confirm, spinner::Spinner, text::Text, typer::Typer, Opts,
+    choose::Choose, confirm::Confirm, spinner::Spinner, text::Text, typer::Typer, CommandOpt, Opts,
     SpinnerStyle,
 };
 
 #[enum_dispatch::enum_dispatch(ComponentTrait)]
-enum Component {
+pub enum Component {
     Text(Text),
     Confirm(Confirm),
     Spinner(Spinner),
@@ -41,7 +42,7 @@ pub trait ComponentTrait {
 impl Component {
     pub fn from_opts(opts: &Opts) -> Component {
         match opts.subcommand.clone() {
-            Command::Text {
+            CommandOpt::Text {
                 placeholder,
                 prefix,
             } => Component::Text(Text {
@@ -50,13 +51,13 @@ impl Component {
                 prefix,
                 input: String::new(),
             }),
-            Command::Confirm { text, no, yes } => Component::Confirm(Confirm {
+            CommandOpt::Confirm { text, no, yes } => Component::Confirm(Confirm {
                 text: text.clone(),
                 padded_no: format!(" {: ^10} ", no),
                 padded_yes: format!(" {: ^10} ", yes),
                 confirmed: false,
             }),
-            Command::Spinner {
+            CommandOpt::Spinner {
                 text,
                 speed,
                 command,
@@ -106,14 +107,14 @@ impl Component {
                     speed: Duration::from_millis(speed as u64),
                 })
             }
-            Command::Typer { speed, text, wait } => Component::Typer(Typer {
+            CommandOpt::Typer { speed, text, wait } => Component::Typer(Typer {
                 speed: Duration::from_millis(speed as u64),
                 wait: Duration::from_millis(wait as u64),
                 graphemes: text.graphemes(true).map(|s| s.to_owned()).rev().collect(),
                 last_updated: Instant::now(),
                 done_printing: false,
             }),
-            Command::Choose {
+            CommandOpt::Choose {
                 selections,
                 text,
                 inexact,

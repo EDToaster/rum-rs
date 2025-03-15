@@ -5,9 +5,10 @@ mod spinner;
 mod text;
 mod typer;
 
-use std::{io::stderr, num::NonZeroUsize, path::Component, process::ExitCode, time::Duration};
+use std::{io::stderr, num::NonZeroUsize, process::ExitCode, time::Duration};
 
 use clap::{Parser, Subcommand};
+use component::{Component, ComponentTrait};
 use crossterm::{
     cursor::{Hide, Show},
     event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -35,7 +36,7 @@ struct Opts {
 
     /// Subcommand
     #[structopt(subcommand)]
-    subcommand: Command,
+    subcommand: CommandOpt,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -54,7 +55,7 @@ enum SpinnerStyle {
 }
 
 #[derive(Debug, Subcommand, Clone)]
-enum Command {
+enum CommandOpt {
     /// Single line text input
     Text {
         /// Placeholder text
